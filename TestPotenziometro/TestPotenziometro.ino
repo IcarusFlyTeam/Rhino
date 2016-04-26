@@ -10,9 +10,8 @@ void setup() {
 
 void loop() {
   float lunghezza;
-  potVal = analogRead(potPin);
-  lunghezza = pot.leggiPotenziometro(potVal);
+  
   Serial.print("Lunghezza mm ");
-  Serial.println(lunghezza);
+  Serial.println(pot.leggiPotenziometro());
   delay(100); 
 }

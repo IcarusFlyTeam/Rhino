@@ -5,13 +5,13 @@
 #define in_min 0
 #define in_max 1023
 #define out_min 0
-#define out_max 100
+#define out_max 99
 
 class Potenziometro
 {
     public:
         Potenziometro(int pin);
-        float leggiPotenziometro(int potVal);
+        float leggiPotenziometro();
     private:
         int potPin;
 };
