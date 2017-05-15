@@ -3,10 +3,13 @@
 #include <IcarusXbee.h>
 #include <IcarusCelle.h>
 #include <IcarusIO.h>
+#include <IcarusHWCfg.h>
 
 #define myDebugSerial Serial
 #define SerialXbee Serial3
 #define PIN_BUZZER 12
+#define PIN_CELLA1 A0
+#define PIN_CELLA2 A1
 #define LED_CHARGE 9
 #define LED_FIRE 10
 #define LED_TEST 11
@@ -14,13 +17,6 @@
 #define RELE_FIRE 6
 #define RELE_SAFE 7
 #define BUTTON_DISCHARGE 8
-#define T_SAFE_DISCHARGE 10000
-#define T_CHARGE 30000
-#define T_FIRE 3000
-#define T_TOLL 2000
-#define T_LAMP 200
-#define T_TEST 1000
-
 
 typedef enum {
 	Charge,
@@ -37,10 +33,12 @@ File dataFile;
 typeCmdFire CmdFireReceived;
 mode Fase;
 bool fireEnabled;
-bool countdownStarted;
+bool logEnabled;
 int16_t t_countdown;
+IcarusCelle cella1(A0, _500kg128);
+IcarusCelle cella2(A1, _500kg022);
 
-unsigned long t_lastDataSent,t_startCmdFire,t_lastLampTest,t_lastLampCharge,t_lastLampFire;
+unsigned long t_lastDataSent,t_lastDataLogged,t_startCmdFire,t_lastLampTest,t_lastLampCharge,t_lastLampFire;
 
 void setup() {
   myDebugSerial.begin(115200);
@@ -53,6 +51,7 @@ void setup() {
   t_lastLampTest= IO.Time;
   Fase = Idle;
   fireEnabled = false;
+  logEnabled = false;
 }
 
 void loop() {
@@ -79,16 +78,16 @@ void loop() {
 	myXbee.Read();
 	if (IO.cmdFireAvailable) {
 		CmdFireReceived=myXbee.readCmdFire();
-		if (CmdFireReceived == stopEmergenza || CmdFireReceived == Fuoco)
+		if (CmdFireReceived == stopEmergenza || CmdFireReceived == Fuoco || CmdFireReceived == startLog ||CmdFireReceived == stopLog)
 		{
 			if (CmdFireReceived == stopEmergenza) {
-				digitalWrite(RELE_SAFE, LOW);
+				digitalWrite(RELE_SAFE, HIGH);
 				digitalWrite(LED_TEST, LOW);
 				digitalWrite(RELE_FIRE, LOW);
 				digitalWrite(LED_FIRE, LOW);
 				digitalWrite(RELE_CHARGE, LOW);
 				digitalWrite(LED_CHARGE, LOW);
-				Fase = Idle;
+				Fase = safeDischarge;
 				t_startCmdFire = IO.Time;
 				myXbee.SendCmdFire(stopEmergenza);
 				dataFile.println(String(String(IO.Time) + " - Emergency stop command received"));
@@ -97,7 +96,6 @@ void loop() {
 			else if (CmdFireReceived == Fuoco) {
 				if (((IO.Time - t_startCmdFire) >= (t_countdown*1000 - T_TOLL)) &&
 					((IO.Time - t_startCmdFire) <= (t_countdown*1000 + T_TOLL))) {
-					Fase = Fire;
 					fireEnabled = true;
 					myXbee.SendCmdFire(Fuoco);
 					dataFile.println(String(String(IO.Time) + " - Fire command received"));
@@ -110,9 +108,21 @@ void loop() {
 					myXbee.SendCmdFire(Timeout);
 					dataFile.println(String(String(IO.Time) + " - Fire command not received on time"));
 					myDebugSerial.println("Fire command not received on time");
-					myDebugSerial.println(IO.Time - t_startCmdFire);
 				}
 			}
+			else if (CmdFireReceived == startLog) {
+				logEnabled = true;
+				myXbee.SendCmdFire(startLog);
+				dataFile.println(String(String(IO.Time) + " - Start logging command received"));
+				myDebugSerial.println("Start logging command received");
+			}
+			else if (CmdFireReceived == stopLog) {
+				logEnabled = false;
+				myXbee.SendCmdFire(stopLog);
+				dataFile.println(String(String(IO.Time) + " - Start logging command received"));
+				myDebugSerial.println("Start logging command received");
+			}
+
 		}
 		else if (Fase==Idle)
 		{
@@ -197,7 +207,7 @@ void loop() {
 		}
 		break;
 	case Fire:
-		if ((IO.Time - t_startCmdFire >= t_countdown*1000)&& (digitalRead(RELE_FIRE)==LOW))
+		if ((digitalRead(RELE_FIRE)==LOW))
 		{
 			t_startCmdFire = IO.Time;
 			digitalWrite(RELE_FIRE, HIGH);
@@ -212,7 +222,6 @@ void loop() {
 			Fase = Idle;
 			t_startCmdFire = IO.Time;
 			fireEnabled = false;
-			countdownStarted = false;
 			myXbee.SendCmdFire(Fuoco);
 			myDebugSerial.println("Fuoco completato");
 		}
@@ -221,32 +230,26 @@ void loop() {
 		if (IO.cmdAvailable)
 		{
 			t_countdown = static_cast<int16_t>(myXbee.getCmd());
-			myXbee.addToPayload(Comando);
-			myXbee.Send();
-			countdownStarted = true;
 			myDebugSerial.print("Tempo di countdown ricevuto ");
 			myDebugSerial.println(t_countdown);
+			myDebugSerial.println("Countdown avviato");
+			logEnabled = true;
 		}
 		if (IO.Time - t_startCmdFire >= t_countdown * 1000)
 		{
-			if (fireEnabled) {
-				digitalWrite(RELE_FIRE, HIGH);
-				digitalWrite(LED_FIRE, HIGH);
-				Fase = Fire;
-				t_startCmdFire = IO.Time;
-				myXbee.SendCmdFire(avviaCountdown);
-				myDebugSerial.println("Countdown avviato");
-			}
-			else
+			if (IO.Time - t_startCmdFire >= t_countdown * 1000 + T_TOLL)
 			{
 				Fase = Idle;
+				myDebugSerial.println("Fire command not received on time");
 				myXbee.SendCmdFire(MissingCountdown);
-
+			}
+			else if (fireEnabled) {
+				Fase = Fire;
 			}
 		}
 		break;
 	case testMode:
-		if (IO.Time - t_startCmdFire >= T_LAMP) {
+		if (IO.Time - t_startCmdFire >= T_TEST) {
 			Fase = Idle;
 			digitalWrite(LED_TEST, LOW);
 			myDebugSerial.println("Stop Led");
@@ -257,6 +260,24 @@ void loop() {
 	case Idle:
 	default: break;
 	}
+	if (logEnabled) {
+		if (IO.Time - t_lastDataSent >= T_SDLOG) {
+			IO.Load[0] = cella1.measureForce();
+			IO.Load[1] = cella2.measureForce();
+			dataFile.print(IO.Load[0]);
+			dataFile.print(";");
+			dataFile.print(IO.Load[1]);
+			dataFile.println(";");
+			dataFile.flush();
+			t_lastDataLogged = IO.Time;
+			if (IO.Time - t_lastDataSent >= T_XBEELOG) {
+				myXbee.addToPayload(Celle);
+				myXbee.Send();
+				t_lastDataSent = IO.Time;
+			}
+		}
+	}
+
 	}
 
 
@@ -294,6 +315,11 @@ void setupXbee() {
 	if (!SerialXbee)
 	{
 		myDebugSerial.println("Xbee not ready!");
+		while (1) {
+			blink(LED_CHARGE, &t_lastLampCharge, millis());
+			blink(LED_TEST, &t_lastLampTest, millis());
+			blink(LED_FIRE, &t_lastLampFire, millis());
+		}
 	}
 	if (SerialXbee) myDebugSerial.println("Communications initialized");
 }
