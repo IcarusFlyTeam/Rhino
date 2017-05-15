@@ -11,7 +11,7 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectGuid>{C5F80730-F44F-4478-BDAE-6634EFC2CA88}</ProjectGuid>
+    <ProjectGuid>{2A7452B1-BA0D-4B38-9AFD-D370DE94EFD5}</ProjectGuid>
     <RootNamespace>
     </RootNamespace>
     <ProjectName>Rhino</ProjectName>

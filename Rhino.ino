@@ -55,12 +55,7 @@ void setup() {
 }
 
 void loop() {
-
 	IO.Time = millis();
-
-	// make a string for assembling the data to log:
-	String dataString = "";
-	// read three sensors and append to the string:
 	if (digitalRead(BUTTON_DISCHARGE) == HIGH) {
 		digitalWrite(RELE_CHARGE, LOW);
 		digitalWrite(RELE_FIRE, LOW);
@@ -119,8 +114,8 @@ void loop() {
 			else if (CmdFireReceived == stopLog) {
 				logEnabled = false;
 				myXbee.SendCmdFire(stopLog);
-				dataFile.println(String(String(IO.Time) + " - Start logging command received"));
-				myDebugSerial.println("Start logging command received");
+				dataFile.println(String(String(IO.Time) + " - Stop logging command received"));
+				myDebugSerial.println("Stop logging command received");
 			}
 
 		}
@@ -212,6 +207,7 @@ void loop() {
 			t_startCmdFire = IO.Time;
 			digitalWrite(RELE_FIRE, HIGH);
 			digitalWrite(LED_FIRE, HIGH);
+			analogWrite(PIN_BUZZER, 20);
 			myDebugSerial.println("Fuoco avviato");
 			break;
 		}
@@ -219,6 +215,7 @@ void loop() {
 		{
 			digitalWrite(RELE_FIRE, LOW);
 			digitalWrite(LED_FIRE, LOW);
+			digitalWrite(PIN_BUZZER, LOW);
 			Fase = Idle;
 			t_startCmdFire = IO.Time;
 			fireEnabled = false;
@@ -235,6 +232,8 @@ void loop() {
 			myDebugSerial.println("Countdown avviato");
 			logEnabled = true;
 		}
+		blink(LED_FIRE, &t_lastLampFire, IO.Time, T_LAMP_SLOW);
+		beep(IO.Time, 40);
 		if (IO.Time - t_startCmdFire >= t_countdown * 1000)
 		{
 			if (IO.Time - t_startCmdFire >= t_countdown * 1000 + T_TOLL)
@@ -255,7 +254,7 @@ void loop() {
 			myDebugSerial.println("Stop Led");
 			break;
 		}
-		blink(LED_TEST, &t_lastLampTest, IO.Time);
+		blink(LED_TEST, &t_lastLampTest, IO.Time, T_LAMP_FAST);
 		break;
 	case Idle:
 	default: break;
@@ -264,10 +263,7 @@ void loop() {
 		if (IO.Time - t_lastDataSent >= T_SDLOG) {
 			IO.Load[0] = cella1.measureForce();
 			IO.Load[1] = cella2.measureForce();
-			dataFile.print(IO.Load[0]);
-			dataFile.print(";");
-			dataFile.print(IO.Load[1]);
-			dataFile.println(";");
+			dataFile.print(String(String(IO.Load[0]) + ";"+ String(IO.Load[0]) + ";"));
 			dataFile.flush();
 			t_lastDataLogged = IO.Time;
 			if (IO.Time - t_lastDataSent >= T_XBEELOG) {
@@ -289,9 +285,9 @@ void setupSDCard() {
 		myDebugSerial.println("Card failed, or not present");
 		// don't do anything more:
 		while (1){
-			blink(LED_CHARGE,&t_lastLampCharge,millis());
-			blink(LED_TEST, &t_lastLampTest, millis());
-			blink(LED_FIRE, &t_lastLampFire, millis());
+			blink(LED_CHARGE,&t_lastLampCharge,millis(), T_LAMP_FAST);
+			blink(LED_TEST, &t_lastLampTest, millis(), T_LAMP_FAST);
+			blink(LED_FIRE, &t_lastLampFire, millis(), T_LAMP_FAST);
 		}
 	}
 	myDebugSerial.println("SDcard initialized.");
@@ -316,9 +312,9 @@ void setupXbee() {
 	{
 		myDebugSerial.println("Xbee not ready!");
 		while (1) {
-			blink(LED_CHARGE, &t_lastLampCharge, millis());
-			blink(LED_TEST, &t_lastLampTest, millis());
-			blink(LED_FIRE, &t_lastLampFire, millis());
+			blink(LED_CHARGE, &t_lastLampCharge, millis(), T_LAMP_FAST);
+			blink(LED_TEST, &t_lastLampTest, millis(), T_LAMP_FAST);
+			blink(LED_FIRE, &t_lastLampFire, millis(), T_LAMP_FAST);
 		}
 	}
 	if (SerialXbee) myDebugSerial.println("Communications initialized");
@@ -342,12 +338,30 @@ void setupPinIO() {
 	digitalWrite(PIN_BUZZER, LOW);
 }
 
-void blink(uint8_t led, unsigned long int* ultimoLamp, unsigned long int adesso) {
-	if (adesso - *ultimoLamp > T_LAMP)
+void blink(uint8_t led, unsigned long int* ultimoLamp, unsigned long int adesso, uint16_t semiperiodo) {
+	if (adesso - *ultimoLamp >= semiperiodo)
 	{
 		digitalWrite(led, !digitalRead(led));
 		*ultimoLamp = adesso;
-		myDebugSerial.print("Switch led ");
-		myDebugSerial.println(led);
+		//myDebugSerial.print("Switch led ");
+		//myDebugSerial.println(led);
 	}
+}
+
+void beep(unsigned long int adesso, uint16_t periodoON) {
+	static bool stato = false;
+	static long int ultimoBeepStart = adesso;
+	static long int BeepStart = adesso;
+
+	if (adesso - ultimoBeepStart >= T_LAMP_SLOW)
+	{
+		analogWrite(PIN_BUZZER, 80);
+		ultimoBeepStart = adesso;
+		stato = true;
+	}
+	if (stato && (adesso - ultimoBeepStart >= periodoON)) {
+		digitalWrite(PIN_BUZZER, LOW);
+		stato = false;
+	}
+
 }
