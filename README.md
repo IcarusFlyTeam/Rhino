@@ -1,2 +1,0 @@
-# Rhino
-Rhino Project

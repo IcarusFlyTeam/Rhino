@@ -18,7 +18,8 @@
 #define T_CHARGE 30000
 #define T_FIRE 3000
 #define T_TOLL 2000
-#define T_LAMP 1000
+#define T_LAMP 200
+#define T_TEST 1000
 
 
 typedef enum {
@@ -37,19 +38,19 @@ typeCmdFire CmdFireReceived;
 mode Fase;
 bool fireEnabled;
 bool countdownStarted;
-uint16_t t_countdown;
+int16_t t_countdown;
 
-unsigned long t_lastDataSent,t_startCmdFire, t_lastLamp;
+unsigned long t_lastDataSent,t_startCmdFire,t_lastLampTest,t_lastLampCharge,t_lastLampFire;
 
 void setup() {
   myDebugSerial.begin(115200);
+  setupPinIO();
   setupSDCard();
   setupXbee();
-  setupPinIO();
   IO.Time = millis();
   t_lastDataSent = IO.Time;
   t_startCmdFire = IO.Time;
-  t_lastLamp= IO.Time;
+  t_lastLampTest= IO.Time;
   Fase = Idle;
   fireEnabled = false;
 }
@@ -70,6 +71,7 @@ void loop() {
 		digitalWrite(LED_CHARGE, LOW);
 		Fase = safeDischarge;
 		t_startCmdFire = IO.Time;
+		t_lastLampTest = IO.Time;
 		myXbee.SendCmdFire(scaricaSicura);
 		dataFile.println(String(String(IO.Time)+" - Safe Discharge button pressed"));
 		dataFile.flush();	
@@ -93,8 +95,8 @@ void loop() {
 				myDebugSerial.println("Emergency stop command received");
 			}
 			else if (CmdFireReceived == Fuoco) {
-				if (((IO.Time - t_startCmdFire) >= (t_countdown - T_TOLL)) &&
-					((IO.Time - t_startCmdFire) <= (t_countdown + T_TOLL))) {
+				if (((IO.Time - t_startCmdFire) >= (t_countdown*1000 - T_TOLL)) &&
+					((IO.Time - t_startCmdFire) <= (t_countdown*1000 + T_TOLL))) {
 					Fase = Fire;
 					fireEnabled = true;
 					myXbee.SendCmdFire(Fuoco);
@@ -103,10 +105,12 @@ void loop() {
 				}
 				else
 				{
+					fireEnabled = false;
 					Fase = Idle;
 					myXbee.SendCmdFire(Timeout);
 					dataFile.println(String(String(IO.Time) + " - Fire command not received on time"));
 					myDebugSerial.println("Fire command not received on time");
+					myDebugSerial.println(IO.Time - t_startCmdFire);
 				}
 			}
 		}
@@ -162,6 +166,7 @@ void loop() {
 				digitalWrite(LED_CHARGE, LOW);
 				Fase = testMode;
 				t_startCmdFire = IO.Time;
+				t_lastLampTest = IO.Time;
 				myXbee.SendCmdFire(testConnessione);
 				dataFile.println(String(String(IO.Time) + " - Test command received"));
 				myDebugSerial.println("Test command received");
@@ -192,6 +197,14 @@ void loop() {
 		}
 		break;
 	case Fire:
+		if ((IO.Time - t_startCmdFire >= t_countdown*1000)&& (digitalRead(RELE_FIRE)==LOW))
+		{
+			t_startCmdFire = IO.Time;
+			digitalWrite(RELE_FIRE, HIGH);
+			digitalWrite(LED_FIRE, HIGH);
+			myDebugSerial.println("Fuoco avviato");
+			break;
+		}
 		if (IO.Time - t_startCmdFire >= T_FIRE)
 		{
 			digitalWrite(RELE_FIRE, LOW);
@@ -207,11 +220,12 @@ void loop() {
 	case countDown:
 		if (IO.cmdAvailable)
 		{
-			t_countdown = myXbee.getCmd();
+			t_countdown = static_cast<int16_t>(myXbee.getCmd());
 			myXbee.addToPayload(Comando);
 			myXbee.Send();
 			countdownStarted = true;
-			myDebugSerial.println("Tempo di countdown ricevuto");
+			myDebugSerial.print("Tempo di countdown ricevuto ");
+			myDebugSerial.println(t_countdown);
 		}
 		if (IO.Time - t_startCmdFire >= t_countdown * 1000)
 		{
@@ -238,12 +252,7 @@ void loop() {
 			myDebugSerial.println("Stop Led");
 			break;
 		}
-		if (IO.Time - t_lastLamp > 200)
-		{
-			digitalWrite(LED_TEST, !digitalRead(LED_TEST));
-			t_lastLamp = IO.Time;
-			myDebugSerial.println("Switch");
-		}
+		blink(LED_TEST, &t_lastLampTest, IO.Time);
 		break;
 	case Idle:
 	default: break;
@@ -258,7 +267,11 @@ void setupSDCard() {
 	if (!SD.begin(chipSelect)) {
 		myDebugSerial.println("Card failed, or not present");
 		// don't do anything more:
-		return;
+		while (1){
+			blink(LED_CHARGE,&t_lastLampCharge,millis());
+			blink(LED_TEST, &t_lastLampTest, millis());
+			blink(LED_FIRE, &t_lastLampFire, millis());
+		}
 	}
 	myDebugSerial.println("SDcard initialized.");
 
@@ -301,4 +314,14 @@ void setupPinIO() {
 	digitalWrite(RELE_FIRE, LOW);
 	digitalWrite(RELE_SAFE, LOW);
 	digitalWrite(PIN_BUZZER, LOW);
+}
+
+void blink(uint8_t led, unsigned long int* ultimoLamp, unsigned long int adesso) {
+	if (adesso - *ultimoLamp > T_LAMP)
+	{
+		digitalWrite(led, !digitalRead(led));
+		*ultimoLamp = adesso;
+		myDebugSerial.print("Switch led ");
+		myDebugSerial.println(led);
+	}
 }
