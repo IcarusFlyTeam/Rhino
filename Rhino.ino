@@ -42,6 +42,7 @@ unsigned long t_lastDataSent,t_lastDataLogged,t_startCmdFire,t_lastLampTest,t_la
 
 void setup() {
   myDebugSerial.begin(115200);
+  if (myDebugSerial)printInfo();
   setupPinIO();
   setupSDCard();
   setupXbee();
@@ -362,4 +363,8 @@ void beep(unsigned long int adesso, uint16_t periodoON) {
 		stato = false;
 	}
 
+}
+
+void printInfo() {
+	myDebugSerial.println("Coded by Dave");
 }
