@@ -263,7 +263,7 @@ void loop() {
 		if (IO.Time - t_lastDataSent >= T_SDLOG) {
 			IO.Load[0] = cella1.measureForce();
 			IO.Load[1] = cella2.measureForce();
-			dataFile.print(String(String(IO.Load[0]) + ";"+ String(IO.Load[0]) + ";"));
+			dataFile.println(String(String(IO.Load[0]) + ";"+ String(IO.Load[0]) + ";"));
 			dataFile.flush();
 			t_lastDataLogged = IO.Time;
 			if (IO.Time - t_lastDataSent >= T_XBEELOG) {
@@ -343,8 +343,6 @@ void blink(uint8_t led, unsigned long int* ultimoLamp, unsigned long int adesso,
 	{
 		digitalWrite(led, !digitalRead(led));
 		*ultimoLamp = adesso;
-		//myDebugSerial.print("Switch led ");
-		//myDebugSerial.println(led);
 	}
 }
 
